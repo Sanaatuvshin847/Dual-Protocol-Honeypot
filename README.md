@@ -7,9 +7,6 @@
 
 An asynchronous Python (`asyncio`) network honeypot and real-time telemetry platform that contrasts **connectionless UDP** and **connection-oriented TCP** mechanics under live simulated attacks, paired with an **autonomous cross-protocol triage loop** and a **WebSocket SOC dashboard**.
 
-> **Screenshot:** Place a capture of your live dashboard at `docs/dashboard-demo.png` to display it automatically below.
-> ![Live Telemetry Dashboard](docs/dashboard-demo.png)
-
 ---
 
 ## Overview
