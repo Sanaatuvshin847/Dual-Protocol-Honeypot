@@ -1,0 +1,199 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Dual-Protocol Honeypot & Agentic AI Telemetry</title>
+  <style>
+    :root {
+      --bg: #0b0f17; --panel: #131a26; --border: #233044;
+      --text: #e2e8f0; --muted: #8b9bb4;
+      --udp: #38bdf8; --tcp: #34d399; --alert: #f87171; --warn: #fbbf24;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+    body { background: var(--bg); color: var(--text); padding: 18px; }
+    header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; border-bottom: 1px solid var(--border); padding-bottom: 12px; }
+    .badge { padding: 4px 10px; border-radius: 4px; font-size: 12px; background: #1e293b; }
+    .grid-kpi { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin-bottom: 16px; }
+    .card { background: var(--panel); border: 1px solid var(--border); border-radius: 8px; padding: 14px; }
+    .card h3 { font-size: 11px; color: var(--muted); text-transform: uppercase; margin-bottom: 6px; }
+    .card .val { font-size: 24px; font-weight: 700; }
+    .grid-main { display: grid; grid-template-columns: 2fr 1fr; gap: 14px; margin-bottom: 16px; }
+    canvas { width: 100%; height: 210px; display: block; margin-top: 8px; }
+    table { width: 100%; border-collapse: collapse; font-size: 12px; margin-top: 8px; }
+    th, td { text-align: left; padding: 6px 8px; border-bottom: 1px solid var(--border); }
+    th { color: var(--muted); }
+    .pill-udp { color: var(--udp); font-weight: bold; }
+    .pill-tcp { color: var(--tcp); font-weight: bold; }
+    .alert-box { border-left: 3px solid var(--alert); background: rgba(248, 113, 113, 0.08); padding: 10px; margin-top: 8px; border-radius: 4px; font-size: 12px; }
+    .log-feed { max-height: 220px; overflow-y: auto; font-size: 12px; margin-top: 8px; }
+    .log-row { padding: 4px 0; border-bottom: 1px solid #1a2333; display: flex; gap: 10px; }
+  </style>
+</head>
+<body>
+  <header>
+    <div>
+      <strong>DUAL-PROTOCOL HONEYPOT TELEMETRY</strong>
+      <span style="color:var(--muted); margin-left:10px;">UDP Stateless Sensor + TCP Stateful Trap</span>
+    </div>
+    <div id="ws-status" class="badge">CONNECTING...</div>
+  </header>
+
+  <section class="grid-kpi">
+    <div class="card"><h3>UDP Datagrams / sec</h3><div id="kpi-udp-pps" class="val" style="color:var(--udp)">0</div></div>
+    <div class="card"><h3>TCP Events / sec</h3><div id="kpi-tcp-pps" class="val" style="color:var(--tcp)">0</div></div>
+    <div class="card"><h3>Active TCP Sessions</h3><div id="kpi-tcp-active" class="val" style="color:var(--warn)">0</div></div>
+    <div class="card"><h3>AI Correlated Alerts</h3><div id="kpi-alerts" class="val" style="color:var(--alert)">0</div></div>
+  </section>
+
+  <section class="grid-main">
+    <div class="card">
+      <div style="display:flex; justify-content:space-between;">
+        <h3>Live Protocol Rate (60s Rolling Window)</h3>
+        <span style="font-size:12px;">
+          <span style="color:var(--udp)">■ UDP Datagrams/s</span> &nbsp;
+          <span style="color:var(--tcp)">■ TCP Stream Events/s</span>
+        </span>
+      </div>
+      <canvas id="rateChart" width="760" height="210"></canvas>
+    </div>
+
+    <div class="card">
+      <h3>Agentic AI Triage Feed</h3>
+      <div id="ai-alerts-list" style="max-height:215px; overflow-y:auto;">
+        <div style="color:var(--muted); font-size:12px; margin-top:8px;">Awaiting cross-protocol activity...</div>
+      </div>
+    </div>
+  </section>
+
+  <section class="grid-main">
+    <div class="card">
+      <h3>Live Socket Event Stream (Ordered TCP vs. Stateless UDP)</h3>
+      <div id="event-feed" class="log-feed"></div>
+    </div>
+
+    <div class="card">
+      <h3>Active TCP State Machine Table</h3>
+      <table>
+        <thead><tr><th>Session</th><th>Source IP</th><th>Port</th><th>State</th><th>Turns</th></tr></thead>
+        <tbody id="tcp-sessions-body"></tbody>
+      </table>
+    </div>
+  </section>
+
+  <script>
+    const udpSeries = Array(60).fill(0);
+    const tcpSeries = Array(60).fill(0);
+    let alertCount = 0;
+
+    function drawChart() {
+      const canvas = document.getElementById("rateChart");
+      const ctx = canvas.getContext("2d");
+      const w = canvas.width, h = canvas.height;
+      ctx.clearRect(0, 0, w, h);
+
+      const maxVal = Math.max(10, ...udpSeries, ...tcpSeries);
+      ctx.strokeStyle = "#1e293b";
+      ctx.lineWidth = 1;
+      for (let i = 1; i <= 4; i++) {
+        const y = (h / 4) * i;
+        ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(w, y); ctx.stroke();
+      }
+
+      const plotLine = (data, color) => {
+        ctx.strokeStyle = color;
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        data.forEach((v, idx) => {
+          const x = (idx / (data.length - 1)) * w;
+          const y = h - (v / maxVal) * (h - 16) - 8;
+          idx === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
+        });
+        ctx.stroke();
+      };
+
+      plotLine(udpSeries, "#38bdf8");
+      plotLine(tcpSeries, "#34d399");
+    }
+
+    function renderSessions(sessions) {
+      const tbody = document.getElementById("tcp-sessions-body");
+      tbody.innerHTML = sessions.map(s => `
+        <tr>
+          <td>${s.session_id}</td>
+          <td>${s.src_ip}</td>
+          <td>:${s.dst_port}</td>
+          <td style="color:var(--tcp)">${s.state}</td>
+          <td>${s.turns}</td>
+        </tr>
+      `).join("") || `<tr><td colspan="5" style="color:var(--muted)">No open TCP handshakes</td></tr>`;
+    }
+
+    function appendEvent(ev) {
+      const feed = document.getElementById("event-feed");
+      const row = document.createElement("div");
+      row.className = "log-row";
+      const cls = ev.protocol === "UDP" ? "pill-udp" : "pill-tcp";
+      const preview = ev.payload_hex ? `hex=${ev.payload_hex.slice(0, 28)}...` : "";
+      row.innerHTML = `
+        <span class="${cls}">[${ev.protocol}]</span>
+        <span>${ev.src_ip}:${ev.src_port} → :${ev.dst_port}</span>
+        <span style="color:var(--warn)">${ev.stage}</span>
+        <span style="color:var(--muted)">${preview}</span>
+      `;
+      feed.prepend(row);
+      while (feed.children.length > 40) feed.removeChild(feed.lastChild);
+    }
+
+    function appendAlert(alert) {
+      const box = document.getElementById("ai-alerts-list");
+      if (alertCount === 0) box.innerHTML = "";
+      alertCount++;
+      document.getElementById("kpi-alerts").textContent = alertCount;
+
+      const el = document.createElement("div");
+      el.className = "alert-box";
+      el.innerHTML = `
+        <strong>[${alert.severity}] ${alert.src_ip}</strong>
+        <div style="margin:4px 0;">${alert.summary}</div>
+        <div style="color:var(--warn)">Action: ${alert.recommended_action}</div>
+      `;
+      box.prepend(el);
+    }
+
+    function connectWS() {
+      const status = document.getElementById("ws-status");
+      const ws = new WebSocket(`ws://${location.host}/ws`);
+
+      ws.onopen = () => { status.textContent = "LIVE STREAM"; status.style.color = "#34d399"; };
+      ws.onclose = () => {
+        status.textContent = "RECONNECTING..."; status.style.color = "#f87171";
+        setTimeout(connectWS, 1500);
+      };
+
+      ws.onmessage = (msg) => {
+        const data = JSON.parse(msg.data);
+        if (data.type === "init_state") {
+          renderSessions(data.active_sessions);
+          data.recent_events.forEach(appendEvent);
+          data.recent_alerts.forEach(appendAlert);
+        } else if (data.type === "socket_event") {
+          appendEvent(data.event);
+          renderSessions(data.active_sessions);
+        } else if (data.type === "metrics_tick") {
+          document.getElementById("kpi-udp-pps").textContent = data.udp_pps;
+          document.getElementById("kpi-tcp-pps").textContent = data.tcp_pps;
+          document.getElementById("kpi-tcp-active").textContent = data.active_tcp_count;
+          udpSeries.push(data.udp_pps); udpSeries.shift();
+          tcpSeries.push(data.tcp_pps); tcpSeries.shift();
+          drawChart();
+        } else if (data.type === "ai_alert") {
+          appendAlert(data.alert);
+        }
+      };
+    }
+
+    drawChart();
+    connectWS();
+  </script>
+</body>
+</html>
